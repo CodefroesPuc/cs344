@@ -118,33 +118,27 @@ __global__ void gaussian_blur(const unsigned char *const inputChannel,
                               int numCols, const float *const filter,
                               const int filterWidth) {
   assert(filterWidth % 2 == 1);
-  for (int idy = blockIdx.y * blockDim.y + threadIdx.y; idy < numRows;
-       idy += blockDim.y * gridDim.y)
-    for (int idx = blockIdx.x * blockDim.x + threadIdx.x; idx < numCols;
-         idx += blockDim.x * gridDim.x) {
-      int id = idy * numCols + idx;
-      if ((idx > numCols) || (idy > numCols))
-        return;
-      float result = 0.f;
-      for (int filter_y = -filterWidth / 2; filter_y <= filterWidth / 2;
-           ++filter_y)
-        for (int filter_x = -filterWidth / 2; filter_x <= filterWidth / 2;
-             ++filter_x) {
-          // global clamped position
-          int image_y =
-              min(max(idy + filter_y, 0), static_cast<int>(numRows - 1));
-          int image_x =
-              min(max(idx + filter_x, 0), static_cast<int>(numCols - 1));
-
-          float image_value =
-              static_cast<float>(inputChannel[image_y * numCols + image_x]);
-          float filter_value =
-              filter[(filter_y + filterWidth / 2) * filterWidth + filter_x +
-                     filterWidth / 2];
-          result += image_value * filter_value;
-        }
-      outputChannel[id] = static_cast<unsigned char>(result);
+  /* Global Id */
+  int idy = blockIdx.y * blockDim.y + threadIdx.y;
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int id = idy * numCols + idx;
+  if ((idx >= numCols) || (idy >= numRows))
+    return;
+  /* Local Id */
+  float result = 0.f;
+  for (int filter_y = -filterWidth / 2; filter_y <= filterWidth / 2; ++filter_y)
+    for (int filter_x = -filterWidth / 2; filter_x <= filterWidth / 2;
+         ++filter_x) {
+      // global clamped position
+      int image_y = min(max(idy + filter_y, 0), static_cast<int>(numRows - 1));
+      int image_x = min(max(idx + filter_x, 0), static_cast<int>(numCols - 1));
+      float image_value =
+          static_cast<float>(inputChannel[image_y * numCols + image_x]);
+      float filter_value = filter[(filter_y + filterWidth / 2) * filterWidth +
+                                  filter_x + filterWidth / 2];
+      result += image_value * filter_value;
     }
+  outputChannel[id] = static_cast<unsigned char>(result);
 }
 
 // This kernel takes in an image represented as a uchar4 and splits
@@ -237,7 +231,7 @@ void your_gaussian_blur(const uchar4 *const h_inputImageRGBA,
                         unsigned char *d_greenBlurred,
                         unsigned char *d_blueBlurred, const int filterWidth) {
   // Set reasonable block size (i.e., number of threads per block)
-  const dim3 blockSize(16, 16, 1);
+  const dim3 blockSize(8, 8, 1);
 
   // Compute correct grid size (i.e., number of blocks per kernel launch)
   // from the image size and and block size.
@@ -253,12 +247,12 @@ void your_gaussian_blur(const uchar4 *const h_inputImageRGBA,
 
   // TODO: Call your convolution kernel here 3 times, once for each color
   // channel.
-  gaussian_blur<<<gridStride, blockSize>>>(d_red, d_redBlurred, numRows,
-                                           numCols, d_filter, filterWidth);
-  gaussian_blur<<<gridStride, blockSize>>>(d_green, d_greenBlurred, numRows,
-                                           numCols, d_filter, filterWidth);
-  gaussian_blur<<<gridStride, blockSize>>>(d_blue, d_blueBlurred, numRows,
-                                           numCols, d_filter, filterWidth);
+  gaussian_blur<<<gridSize, blockSize>>>(d_red, d_redBlurred, numRows, numCols,
+                                         d_filter, filterWidth);
+  gaussian_blur<<<gridSize, blockSize>>>(d_green, d_greenBlurred, numRows,
+                                         numCols, d_filter, filterWidth);
+  gaussian_blur<<<gridSize, blockSize>>>(d_blue, d_blueBlurred, numRows,
+                                         numCols, d_filter, filterWidth);
 
   // Again, call cudaDeviceSynchronize(), then call checkCudaErrors()
   // immediately after
